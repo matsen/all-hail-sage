@@ -8,7 +8,7 @@ from sage.misc.temporary_file import tmp_dir, graphics_filename
 dirname = tmp_dir()
 
 
-def nb_show(graphics_object, ext='png'):
+def nb_show(graphics_object, ext='.png'):
     name = os.path.join(dirname, graphics_filename(ext))
     graphics_object.save(name)
     display(Image(name))
