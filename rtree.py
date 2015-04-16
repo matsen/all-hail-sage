@@ -1,27 +1,29 @@
-# Rooted phylogenetic trees in SAGE, where 0 is always the root, then 1 through n are the leaves.
+# Rooted phylogenetic trees in SAGE, where 0 is always the root, then 1 through
+# n are the leaves.
 
 
 from sage.all import Graph, matrix, SymmetricGroup
 from sage.plot.graphics import GraphicsArray
 
-# RTree Object
 
 class RTree(Graph):
-    def __init__(self, **kwargs):
-        super(RTree, self).__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(RTree, self).__init__(*args, **kwargs)
 
     def _repr_(self):
-        return to_newick(self)
+        return self.to_newick()
 
     def plot(self):
-        return super(RTree, self).plot(layout='tree', tree_root=0, tree_orientation="down")
+        return super(RTree, self).plot(
+            layout='tree', tree_root=0, tree_orientation="down")
 
     def tree_reduce(self, f_internal, f_leaf):
         """
-        Assume that t is rooted at 0 and recur down through the rest of the tree
-        using the supplied functions.
+        Assume that t is rooted at 0 and recur down through the rest of the
+        tree using the supplied functions.
         """
-        # Imagine arrow pointing from src to dst. That is where the subtree starts.
+        # Imagine arrow pointing from src to dst.
+        # That is where the subtree starts.
         def aux(src, dst):
             n = self.neighbors(dst)
             n.remove(src)
@@ -33,11 +35,10 @@ class RTree(Graph):
         [internal_root] = self.neighbors(0)
         return aux(0, internal_root)
 
-
     def to_newick(self):
         """
-        Returns a Newick string such that the order of the subtrees is increasing
-        in terms of the minimum of the leaf labels.
+        Returns a Newick string such that the order of the subtrees is
+        increasing in terms of the minimum of the leaf labels.
         """
         # Carry along minimum leaf number to sort.
         def sorted_join((a, a_str), (b, b_str)):
@@ -45,28 +46,26 @@ class RTree(Graph):
                 return (a, '('+a_str+','+b_str+')')
             else:
                 return (b, '('+b_str+','+a_str+')')
-        _, nwk = tree_reduce(self, sorted_join, lambda x: (x, str(x)))
+        _, nwk = self.tree_reduce(sorted_join, lambda x: (x, str(x)))
         return nwk+";"
-
 
     def to_newick_shape(self):
         """
-        Return a Newick string representation of the shape (i.e. non-leaf-labeled
-        but rooted graph) of tree self.
+        Return a Newick string representation of the shape (i.e.
+        non-leaf-labeled but rooted graph) of tree self.
         """
         def sorted_join(a, b):
             if a < b:
                 return ('('+a+','+b+')')
             else:
                 return ('('+b+','+a+')')
-        nwk = tree_reduce(self, sorted_join, lambda _: "")
+        nwk = self.tree_reduce(sorted_join, lambda _: "")
         return nwk+";"
-
 
     def duplicate_zero_edge(self):
         """
-        Return a tree that is the same as the input except with the edge to zero
-        doubled up.
+        Return a new tree that is the same as the original except with the edge
+        to zero doubled up.
         """
         m = self.copy()
         m.allow_multiple_edges(True)
@@ -74,15 +73,13 @@ class RTree(Graph):
         m.add_edge(0, internal_root)
         return m
 
-
     def rooted_is_isomorphic(self, other):
         """
         Are the two trees isomporphic if we give special status to the root?
         """
-        return duplicate_zero_edge(self).is_isomorphic(
-            duplicate_zero_edge(other),
+        return self.duplicate_zero_edge().is_isomorphic(
+            other.duplicate_zero_edge(),
             certify=True)
-
 
     def leaf_edges(self):
         """
@@ -92,14 +89,12 @@ class RTree(Graph):
         return [(u, v, l) for (u, v, l) in self.edges()
                 if self.degree(u) == 1 or self.degree(v) == 1]
 
-
     def n_leaves(self):
         """
-        Note that this is the number of leaf edges, so the number of leaves of a
-        rooted tree is this number minus 1.
+        Note that this is the number of leaf edges, so the number of leaves of
+        a rooted tree is this number minus 1.
         """
-        return len(leaf_edges(self))
-
+        return len(self.leaf_edges())
 
     def multiedge_leaf_edges(self):
         """
@@ -110,59 +105,22 @@ class RTree(Graph):
         """
         m = self.copy()
         m.allow_multiple_edges(True)
-        for (u, v, _) in leaf_edges(m):
-            # min(u, v) is the leaf number; we add the (leaf number + 1) edges to a
-            # leaf edge so that it gets distinguished from other leaf edges. Thus
-            # edge 0 will be doubled, edge 1 will be tripled, etc.
+        for (u, v, _) in m.leaf_edges():
+            # min(u, v) is the leaf number; we add the (leaf number + 1) edges
+            # to a leaf edge so that it gets distinguished from other leaf
+            # edges. Thus edge 0 will be doubled, edge 1 will be tripled, etc.
             for _ in range(min(u, v) + 1):
                 m.add_edge(u, v)
         return m
 
-
-    def llt_is_isomorphic(t1, t2, certificate=False):
+    def llt_is_isomorphic(self, other, certificate=False):
         """
         Return if trees are leaf-labeled (labeled by the leaf vertex numbers)
         isomorphic.
         """
-        return multiedge_leaf_edges(t1).is_isomorphic(multiedge_leaf_edges(t2),
-                                                      certificate)
-
-
-    def llt_isomorphism_matrix(l):
-        n = len(l)
-        return matrix(n, n, lambda i, j: int(llt_is_isomorphic(l[i], l[j])))
-
-
-    def equivalence_classes(criterion, things):
-        """
-        Given a criterion for isomporphism (returning a boolean and a certificate)
-        and a list of things, return an array such that the ith entry is the first
-        appearance of the ith thing's equivalence class under the criterion, as
-        well as the certificates that show the isomorphism.
-        """
-        found = []
-        map_to_class = []
-        certs = []
-        identity = {i: i for i in range(things[0].order())}
-        for test_i in range(len(things)):
-            # Begin search.
-            for found_i in found:
-                (is_same, cert) = criterion(things[found_i], things[test_i])
-                if is_same:
-                    map_to_class.append(found_i)  # This maps test_i to found_i.
-                    certs.append(cert)
-                    break  # We are done searching.
-            else:  # Else statement for the for loop (!).
-                found.append(test_i)
-                map_to_class.append(test_i)  # Isomorphic to self, of course.
-                certs.append(identity)
-        return (map_to_class, certs)
-
-
-    def equivalence_class_representatives(criterion, things):
-        (map_to_class, _) = equivalence_classes(criterion, things)
-        return list(things[i] for i in list(set(map_to_class)))
-
+        return self.multiedge_leaf_edges().is_isomorphic(
+            other.multiedge_leaf_edges(),
+            certificate)
 
     def leaf_automorphism_group(self):
         """
@@ -171,7 +129,7 @@ class RTree(Graph):
         Like everything here, assumes that the first n nodes are leaves.
         # list((to_newick(t), leaf_autom_group(t)) for t in t_list)
         """
-        n = n_leaves(self)-1
+        n = self.n_leaves()-1
         G = SymmetricGroup(n)
         # Only take graph automorphisms that don't move 0.
         Gp = self.automorphism_group(partition=[[0], range(1, self.order())])
@@ -220,7 +178,7 @@ def enumerate_rooted_trees(n_leaves):
     phylogenetic trees.
     """
     return map(
-        lambda t: RTree(data = t),
+        lambda t: RTree(data=t),
         _enumerate_rooted_trees(n_leaves, n_leaves + 1))
 
 
@@ -230,3 +188,41 @@ def indexed_tree_list(to):
     is a list of trees with i leaves.
     """
     return [[]] + [enumerate_rooted_trees(i) for i in range(1, to)]
+
+
+# TODO: Don't really belong?
+
+def equivalence_classes(criterion, things):
+    """
+    Given a criterion for isomporphism (returning a boolean and a certificate)
+    and a list of things, return an array such that the ith entry is the first
+    appearance of the ith thing's equivalence class under the criterion, as
+    well as the certificates that show the isomorphism.
+    """
+    found = []
+    map_to_class = []
+    certs = []
+    identity = {i: i for i in range(things[0].order())}
+    for test_i in range(len(things)):
+        # Begin search.
+        for found_i in found:
+            (is_same, cert) = criterion(things[found_i], things[test_i])
+            if is_same:
+                map_to_class.append(found_i)  # This maps test_i to found_i.
+                certs.append(cert)
+                break  # We are done searching.
+        else:  # Else statement for the for loop (!).
+            found.append(test_i)
+            map_to_class.append(test_i)  # Isomorphic to self, of course.
+            certs.append(identity)
+    return (map_to_class, certs)
+
+
+def equivalence_class_representatives(criterion, things):
+    (map_to_class, _) = equivalence_classes(criterion, things)
+    return list(things[i] for i in list(set(map_to_class)))
+
+
+def llt_isomorphism_matrix(l):
+    n = len(l)
+    return matrix(n, n, lambda i, j: int(l[i].llt_is_isomorphic(l[j])))
