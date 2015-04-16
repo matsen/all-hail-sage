@@ -152,7 +152,7 @@ def _enumerate_rooted_trees(n_leaves, start_internal):
     """
     assert(n_leaves > 0)
     if n_leaves == 1:
-        g = Graph()
+        g = RTree()
         g.add_vertices([0, 1])
         g.add_edge(0, 1)
         return [g]
@@ -177,9 +177,7 @@ def enumerate_rooted_trees(n_leaves):
     Construct all the rooted (with leaf 0), bifurcating, leaf-labeled
     phylogenetic trees.
     """
-    return map(
-        lambda t: RTree(data=t),
-        _enumerate_rooted_trees(n_leaves, n_leaves + 1))
+    return _enumerate_rooted_trees(n_leaves, n_leaves + 1)
 
 
 def indexed_tree_list(to):
