@@ -1,8 +1,9 @@
-# Rooted phylogenetic trees in SAGE, where 0 is always the root, then 1 through
-# n are the leaves.
+# Rooted bifurcating phylogenetic trees in SAGE, where 0 is always the root,
+# then 1 through n are the leaves and higher values are used for the internal
+# nodes.
 
 
-from sage.all import Graph, matrix, SymmetricGroup
+from sage.all import Graph, matrix, Permutation, SymmetricGroup
 from sage.plot.graphics import GraphicsArray
 
 
@@ -138,6 +139,23 @@ class RTree(Graph):
                 # Just take the movement of the leaves, not the internals.
                 lambda tup: all(i <= n for i in tup),
                 g.cycle_tuples()) for g in Gp.gens())
+
+    def act_on_right(self, permish):
+        """
+        Returns a new tree.
+        Permish is something that can be coerced into being a permutation.
+        """
+        p = list(Permutation(permish))
+        n = self.n_leaves()-1
+        if n != len(p):
+            raise ValueError(
+                "Permutation must have same length as # leaves of tree.")
+        # relabel has some "quirks":
+        # http://www.sagemath.org/doc/reference/graphs/sage/graphs/generic_graph.html#sage.graphs.generic_graph.GenericGraph.relabel
+        return self.relabel(
+            # Fix everything except for leaves.
+            [0]+p+range(n+1, self.order()),
+            inplace=False)
 
 
 # Functions
