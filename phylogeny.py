@@ -1,21 +1,22 @@
 # Rooted bifurcating phylogenetic trees in SAGE, where 0 is always the root,
 # then 1 through n are the leaves and higher values are used for the internal
-# nodes.
+# nodes. No promises are made concerning the numbering of the internal nodes.
 
 
 from sage.all import Graph, matrix, Permutation, SymmetricGroup
 from sage.plot.graphics import GraphicsArray
 
 
-class RTree(Graph):
+class Phylogeny(Graph):
     def __init__(self, *args, **kwargs):
-        super(RTree, self).__init__(*args, **kwargs)
+        self.rooted = kwargs.get('rooted', True)
+        super(Phylogeny, self).__init__(*args, **kwargs)
 
     def _repr_(self):
         return self.to_newick()
 
     def plot(self):
-        return super(RTree, self).plot(
+        return super(Phylogeny, self).plot(
             layout='tree', tree_root=0, tree_orientation="down")
 
     def tree_reduce(self, f_internal, f_leaf):
@@ -76,7 +77,7 @@ class RTree(Graph):
 
     def rooted_is_isomorphic(self, other):
         """
-        Are the two trees isomporphic if we give special status to the root?
+        Are the two trees isomorphic if we give special status to the root?
         """
         return self.duplicate_zero_edge().is_isomorphic(
             other.duplicate_zero_edge(),
@@ -123,27 +124,30 @@ class RTree(Graph):
             other.multiedge_leaf_edges(),
             certificate)
 
-    def leaf_automorphism_group(self):
+    def automorphism_group(self):
         """
-        The automorphism group of the leaf nodes of a tree rooted at 0, as a
+        The automorphism group of the leaf nodes of a tree as a
         subgroup of the symmetric group.
         Like everything here, assumes that the first n nodes are leaves.
-        # list((to_newick(t), leaf_autom_group(t)) for t in t_list)
         """
         n = self.n_leaves()-1
         G = SymmetricGroup(n)
-        # Only take graph automorphisms that don't move 0.
-        Gp = self.automorphism_group(partition=[[0], range(1, self.order())])
+        if self.rooted:
+            # Only take graph automorphisms that don't move 0.
+            A = super(Phylogeny, self).automorphism_group(
+                partition=[[0], range(1, self.order())])
+        else:
+            A = super(Phylogeny, self).automorphism_group()
         return G.subgroup(
             filter(
                 # Just take the movement of the leaves, not the internals.
                 lambda tup: all(i <= n for i in tup),
-                g.cycle_tuples()) for g in Gp.gens())
+                g.cycle_tuples()) for g in A.gens())
 
     def act_on_right(self, permish):
         """
         Returns a new tree.
-        Permish is something that can be coerced into being a permutation.
+        `permish` is something that can be coerced into being a permutation.
         """
         p = list(Permutation(permish))
         n = self.n_leaves()-1
@@ -164,19 +168,20 @@ def plot_tree_list(l):
     return GraphicsArray([t.plot() for t in l])
 
 
-def _enumerate_rooted_trees(n_leaves, start_internal):
+def _enumerate_rooted_trees(max_label, start_internal):
     """
-    Tree enumeration with internal nodes starting at some value.
+    Rooted tree enumeration with internal nodes starting at some value and such
+    that the maximum leaf label is `max_label`.
     """
-    assert(n_leaves > 0)
-    if n_leaves == 1:
-        g = RTree()
+    assert(max_label > 0)
+    if max_label == 1:
+        g = Phylogeny(rooted=True)
         g.add_vertices([0, 1])
         g.add_edge(0, 1)
         return [g]
     else:
         l = []
-        for g in _enumerate_rooted_trees(n_leaves-1, start_internal+1):
+        for g in _enumerate_rooted_trees(max_label-1, start_internal+1):
             for (u, v, _) in g.edges():
                 h = g.copy()
                 h.delete_edge(u, v)
@@ -190,12 +195,23 @@ def _enumerate_rooted_trees(n_leaves, start_internal):
         return l
 
 
-def enumerate_rooted_trees(n_leaves):
+def enumerate_trees(n_leaves, rooted=True):
     """
-    Construct all the rooted (with leaf 0), bifurcating, leaf-labeled
-    phylogenetic trees.
+    Construct all the bifurcating, leaf-labeled phylogenetic trees.
     """
-    return _enumerate_rooted_trees(n_leaves, n_leaves + 1)
+    if rooted=False:
+        if n_leaves == 1:
+            t = Phylogeny(rooted=False)
+            return [t.add_vertices([0])]
+
+        # Unrooted trees are in our setup are the same as rooted trees with one
+        # less leaf (note the -1 below).
+        l = _enumerate_rooted_trees(n_leaves-1, n_leaves)
+        for t in l:
+            t.rooted = False  # TODO: eventually a rooting method?
+        return l
+
+    return _enumerate_rooted_trees(n_leaves, n_leaves+1)
 
 
 def indexed_tree_list(to):
