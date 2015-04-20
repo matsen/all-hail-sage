@@ -2,15 +2,20 @@
 # then 1 through n are the leaves and higher values are used for the internal
 # nodes. No promises are made concerning the numbering of the internal nodes.
 
-
+import copy
 from sage.all import Graph, matrix, Permutation, SymmetricGroup
 from sage.plot.graphics import GraphicsArray
 
 
 class Phylogeny(Graph):
-    def __init__(self, *args, **kwargs):
-        self.rooted = kwargs.get('rooted', True)
+    def __init__(self, rooted=True, *args, **kwargs):
         super(Phylogeny, self).__init__(*args, **kwargs)
+        self.rooted = rooted
+
+    # TODO: it's still not completely clear why I need to do this explicitly
+    # for a subclass.
+    def copy(self):
+        return copy.deepcopy(self)
 
     def _repr_(self):
         return self.to_newick()
@@ -168,29 +173,32 @@ def plot_tree_list(l):
     return GraphicsArray([t.plot() for t in l])
 
 
-def _enumerate_rooted_trees(max_label, start_internal):
+def _enumerate_rooted_trees(max_leaf_label, start_internal):
     """
     Rooted tree enumeration with internal nodes starting at some value and such
-    that the maximum leaf label is `max_label`.
+    that the maximum leaf label is `max_leaf_label`.
     """
-    assert(max_label > 0)
-    if max_label == 1:
+    assert(max_leaf_label > 0)
+    if max_leaf_label == 1:
         g = Phylogeny(rooted=True)
         g.add_vertices([0, 1])
         g.add_edge(0, 1)
         return [g]
     else:
         l = []
-        for g in _enumerate_rooted_trees(max_label-1, start_internal+1):
+        # For every tree with one fewer taxon...
+        for g in _enumerate_rooted_trees(max_leaf_label-1, start_internal+1):
+            # cut every edge in two and attach the new taxon, which is named
+            # max_leaf_label.
             for (u, v, _) in g.edges():
                 h = g.copy()
                 h.delete_edge(u, v)
-                new_leaf = h.add_vertex()
-                # One more internal node, starting with start_internal.
+                h.add_vertex(max_leaf_label)
+                # The new internal node is labeled with start_internal.
                 h.add_vertex(start_internal)
                 h.add_edges([(u, start_internal),
                              (v, start_internal),
-                             (new_leaf, start_internal)])
+                             (max_leaf_label, start_internal)])
                 l.append(h)
         return l
 
@@ -199,7 +207,7 @@ def enumerate_trees(n_leaves, rooted=True):
     """
     Construct all the bifurcating, leaf-labeled phylogenetic trees.
     """
-    if rooted=False:
+    if rooted == False:
         if n_leaves == 1:
             t = Phylogeny(rooted=False)
             return [t.add_vertices([0])]
@@ -208,7 +216,7 @@ def enumerate_trees(n_leaves, rooted=True):
         # less leaf (note the -1 below).
         l = _enumerate_rooted_trees(n_leaves-1, n_leaves)
         for t in l:
-            t.rooted = False  # TODO: eventually a rooting method?
+            t.rooted = False  # TODO: eventually add a rooting method?
         return l
 
     return _enumerate_rooted_trees(n_leaves, n_leaves+1)
