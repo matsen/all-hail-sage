@@ -13,14 +13,25 @@ class Phylogeny(Graph):
         self.rooted = rooted
 
     # TODO: it's still not completely clear why I need to do this explicitly
-    # for a subclass.
-    def copy(self):
+    # for a subclass. Furthermore, there is this:
+    # /home/matsen/re/curvature/tangle/all-hail-sage/phylogeny.py in copy(self, **kwargs)
+    #      16     # for a subclass.
+    #      17     def copy(self, **kwargs):
+    # ---> 18         return copy.deepcopy(self, **kwargs)
+    #      19
+    #      20     def _repr_(self):
+    #
+    # TypeError: deepcopy() got an unexpected keyword argument 'immutable'
+    #
+    # so we absorb the kwargs here.
+    def copy(self, **kwargs):
         return copy.deepcopy(self)
 
     def _repr_(self):
         return self.to_newick()
 
     def plot(self):
+        # TODO: unrooted
         return super(Phylogeny, self).plot(
             layout='tree', tree_root=0, tree_orientation="down")
 
@@ -39,10 +50,9 @@ class Phylogeny(Graph):
             else:  # Internal node.
                 [left, right] = n
                 return f_internal(aux(dst, left), aux(dst, right))
-        [internal_root] = self.neighbors(0)
-        return aux(0, internal_root)
+        return aux(0, self.internal_root())
 
-    def to_newick(self):
+    def _rooted_to_newick(self):
         """
         Returns a Newick string such that the order of the subtrees is
         increasing in terms of the minimum of the leaf labels.
@@ -53,21 +63,39 @@ class Phylogeny(Graph):
                 return (a, '('+a_str+','+b_str+')')
             else:
                 return (b, '('+b_str+','+a_str+')')
+        if len(self.neighbors(0)) == 0:
+            return '();'
+        if self.order() == 2:
+            return '({});'.format(self.internal_root())
         _, nwk = self.tree_reduce(sorted_join, lambda x: (x, str(x)))
         return nwk+";"
+
+    def to_newick(self):
+        if self.n_leaves() <= 2 or self.rooted:
+            return self._rooted_to_newick()
+        else:
+            return '('+\
+                ','.join([
+                    t._rooted_to_newick
+                    for t in self.daughters(self.internal_root())])+\
+                ')'
 
     def to_newick_shape(self):
         """
         Return a Newick string representation of the shape (i.e.
         non-leaf-labeled but rooted graph) of tree self.
         """
+        # TODO: deal with unrooted trees too.
+        raise NotImplementedError
         def sorted_join(a, b):
             if a < b:
                 return ('('+a+','+b+')')
             else:
                 return ('('+b+','+a+')')
-        nwk = self.tree_reduce(sorted_join, lambda _: "")
-        return nwk+";"
+        if self.neighbors(0) == []:
+            return '()'
+        nwk = self.tree_reduce(sorted_join, lambda _: '')
+        return nwk+';'
 
     def duplicate_zero_edge(self):
         """
@@ -96,11 +124,62 @@ class Phylogeny(Graph):
         return [(u, v, l) for (u, v, l) in self.edges()
                 if self.degree(u) == 1 or self.degree(v) == 1]
 
+    def internal_root(self):
+        """
+        Return the node connecting to the zero leaf.
+        """
+        if not self.has_vertex(0):
+            raise ValueError('This graph has no 0 vertex.')
+        n = self.neighbors(0)
+        if n == []:
+            raise ValueError('Empty tree has no internal root.')
+        if len(n) > 1:
+            print n
+            raise ValueError('0 vertex is not a leaf.')
+        return n[0]
+
+    def correct_deg_two_vertex(self, v):
+        """
+        If v is a degree two vertex, remove it and heal the edge.
+        """
+        n = self.neighbors(v)
+        if len(n) == 2:
+            self.delete_vertex(v)
+            self.add_edge(n[0], n[1])
+
+    def neighbor_trees(self, v):
+        """
+        Return the three trees around an internal node.
+        """
+        # TODO: further validation.
+        g = self.copy()
+        neighbors = self.neighbors(v)
+        if len(neighbors) == 1:
+            raise ValueError('`neighbor_trees` expects an internal node.')
+        g.delete_vertex(v)
+        def rooted_subtree_with_root(w):
+            h = g.copy()
+            h.subgraph(
+                vertices=g.connected_component_containing_vertex(w), inplace=True)
+            h.add_vertex(0)
+            h.add_edge(0, w)
+            h.correct_deg_two_vertex(w)
+            h.rooted = True # TODO: eventually add a rooting method?
+            return h
+        return [rooted_subtree_with_root(w) for w in neighbors]
+
+    def daughters(self, v):
+        """
+        Return the trees around v that do not contain the zero leaf.
+        """
+        return filter(lambda g: not g.has_vertex(0), self.neighbor_trees(v))
+
     def n_leaves(self):
         """
         Note that this is the number of leaf edges, so the number of leaves of
         a rooted tree is this number minus 1.
         """
+        # TODO: assume binary and just do algebra.
         return len(self.leaf_edges())
 
     def multiedge_leaf_edges(self):
@@ -158,7 +237,7 @@ class Phylogeny(Graph):
         n = self.n_leaves()-1
         if n != len(p):
             raise ValueError(
-                "Permutation must have same length as # leaves of tree.")
+                'Permutation must have same length as # leaves of tree.')
         # relabel has some "quirks":
         # http://www.sagemath.org/doc/reference/graphs/sage/graphs/generic_graph.html#sage.graphs.generic_graph.GenericGraph.relabel
         return self.relabel(
