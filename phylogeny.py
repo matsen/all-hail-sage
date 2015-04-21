@@ -1,6 +1,7 @@
-# Rooted bifurcating phylogenetic trees in SAGE, where 0 is always the root,
-# then 1 through n are the leaves and higher values are used for the internal
-# nodes. No promises are made concerning the numbering of the internal nodes.
+# Degree-3-internal-node phylogenetic trees in SAGE. When rooted, 0 is always
+# the root, then 1 through n are the leaves and higher values are used for the
+# internal nodes. When unrooted, 0 through n-1 are the leaves. No promises are
+# made concerning the numbering of the internal nodes.
 
 import copy
 from sage.all import Graph, matrix, Permutation, SymmetricGroup
@@ -31,9 +32,11 @@ class Phylogeny(Graph):
         return self.to_newick()
 
     def plot(self):
-        # TODO: unrooted
-        return super(Phylogeny, self).plot(
-            layout='tree', tree_root=0, tree_orientation="down")
+        if self.rooted:
+            return super(Phylogeny, self).plot(
+                layout='tree', tree_root=0, tree_orientation="down")
+        else:
+            return super(Phylogeny, self).plot()
 
     def tree_reduce(self, f_internal, f_leaf):
         """
@@ -52,10 +55,11 @@ class Phylogeny(Graph):
                 return f_internal(aux(dst, left), aux(dst, right))
         return aux(0, self.internal_root())
 
-    def _rooted_to_newick(self):
+    def _rooted_to_newick(self, standalone=True):
         """
         Returns a Newick string such that the order of the subtrees is
         increasing in terms of the minimum of the leaf labels.
+        `standalone` determines if it's part of a larger tree or not.
         """
         # Carry along minimum leaf number to sort.
         def sorted_join((a, a_str), (b, b_str)):
@@ -66,19 +70,29 @@ class Phylogeny(Graph):
         if len(self.neighbors(0)) == 0:
             return '();'
         if self.order() == 2:
-            return '({});'.format(self.internal_root())
+            # A 1-leaf rooted tree.
+            if standalone:
+                return '({});'.format(self.internal_root())
+            return str(self.internal_root())
         _, nwk = self.tree_reduce(sorted_join, lambda x: (x, str(x)))
-        return nwk+";"
+        if standalone:
+            return nwk+";"
+        return nwk
 
     def to_newick(self):
         if self.n_leaves() <= 2 or self.rooted:
             return self._rooted_to_newick()
         else:
-            return '('+\
+            [z, l, r] = self.neighbor_trees(self.internal_root())
+            # z is just the zero leaf, which we add back in via the string
+            # below.
+            assert(z.vertices() == [0])
+            # TODO: sort subtrees.
+            return '(0,'+\
                 ','.join([
-                    t._rooted_to_newick
-                    for t in self.daughters(self.internal_root())])+\
-                ')'
+                    t._rooted_to_newick(standalone=False)
+                    for t in [l, r]])+\
+                ');'
 
     def to_newick_shape(self):
         """
@@ -168,12 +182,6 @@ class Phylogeny(Graph):
             return h
         return [rooted_subtree_with_root(w) for w in neighbors]
 
-    def daughters(self, v):
-        """
-        Return the trees around v that do not contain the zero leaf.
-        """
-        return filter(lambda g: not g.has_vertex(0), self.neighbor_trees(v))
-
     def n_leaves(self):
         """
         Note that this is the number of leaf edges, so the number of leaves of
@@ -214,19 +222,23 @@ class Phylogeny(Graph):
         subgroup of the symmetric group.
         Like everything here, assumes that the first n nodes are leaves.
         """
-        n = self.n_leaves()-1
-        G = SymmetricGroup(n)
+        # If rooted, discount the root "leaf", and if unrooted this is the
+        # correct max index:
+        max_idx = self.n_leaves()-1
         if self.rooted:
             # Only take graph automorphisms that don't move 0.
+            G = SymmetricGroup(max_idx)
             A = super(Phylogeny, self).automorphism_group(
                 partition=[[0], range(1, self.order())])
         else:
+            G = PermutationGroup([[(0,1)],[tuple(range(max_idx+1))]])
             A = super(Phylogeny, self).automorphism_group()
         return G.subgroup(
             filter(
                 # Just take the movement of the leaves, not the internals.
-                lambda tup: all(i <= n for i in tup),
-                g.cycle_tuples()) for g in A.gens())
+                lambda tup: all(i <= max_idx for i in tup),
+                g.cycle_tuples())
+            for g in A.gens())
 
     def act_on_right(self, permish):
         """
