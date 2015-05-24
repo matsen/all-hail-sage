@@ -2,14 +2,14 @@ import csv
 import os
 from IPython.display import display, Image
 from sage.matrix.constructor import Matrix
-from sage.misc.temporary_file import tmp_dir, graphics_filename
+from sage.misc.temporary_file import tmp_dir, tmp_filename
 
 
 dirname = tmp_dir()
 
 
 def nb_show(graphics_object, ext='.png'):
-    name = os.path.join(dirname, graphics_filename(ext))
+    name = os.path.join(dirname, tmp_filename(ext=ext))
     graphics_object.save(name)
     display(Image(name))
 
