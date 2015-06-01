@@ -42,6 +42,13 @@ class Phylogeny(Graph):
         else:
             return n
 
+    def leaf_symmetric_group(self):
+        n = self.n_leaves()
+        if self.rooted:
+            return SymmetricGroup(n)
+        else:
+            return PermutationGroup([[(0,1)],[tuple(range(n))]])
+
     def plot(self):
         if self.rooted:
             return super(Phylogeny, self).plot(
@@ -247,18 +254,18 @@ class Phylogeny(Graph):
         subgroup of the symmetric group.
         Like everything here, assumes that the first n nodes are leaves.
         """
+        G = self.leaf_symmetric_group()
         # If rooted, discount the root "leaf", and if unrooted this is the
         # correct max index:
-        max_idx = self.n_leaves()
         if self.rooted:
+            max_idx = self.n_leaves()
             # Only take graph automorphisms that don't move 0.
-            G = SymmetricGroup(max_idx)
             A = super(Phylogeny, self).automorphism_group(
                 partition=[[0], range(1, self.order())])
         else:
+            max_idx = self.n_leaves()-1
             # Use this rather than symmetric group so that we can have 0 get
             # moved around.
-            G = PermutationGroup([[(0,1)],[tuple(range(max_idx+1))]])
             A = super(Phylogeny, self).automorphism_group()
         return G.subgroup(
             filter(
