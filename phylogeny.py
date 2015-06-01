@@ -31,6 +31,17 @@ class Phylogeny(Graph):
     def _repr_(self):
         return self.to_newick()
 
+    def n_leaves(self):
+        """
+        Return the number of leaves.
+        """
+        # TODO: store in object?
+        n = len(self.leaf_edges())
+        if self.rooted:
+            return n-1  # Root doesn't count.
+        else:
+            return n
+
     def plot(self):
         if self.rooted:
             return super(Phylogeny, self).plot(
@@ -204,14 +215,6 @@ class Phylogeny(Graph):
             return h
         return [rooted_subtree_with_root(w) for w in neighbors]
 
-    def n_leaves(self):
-        """
-        Note that this is the number of leaf edges, so the number of leaves of
-        a rooted tree is this number minus 1.
-        """
-        # TODO: assume binary and just do algebra.
-        return len(self.leaf_edges())
-
     def multiedge_leaf_edges(self):
         """
         Make a tree such that graph isomorphism is equivalent to leaf-labeled
@@ -246,13 +249,15 @@ class Phylogeny(Graph):
         """
         # If rooted, discount the root "leaf", and if unrooted this is the
         # correct max index:
-        max_idx = self.n_leaves()-1
+        max_idx = self.n_leaves()
         if self.rooted:
             # Only take graph automorphisms that don't move 0.
             G = SymmetricGroup(max_idx)
             A = super(Phylogeny, self).automorphism_group(
                 partition=[[0], range(1, self.order())])
         else:
+            # Use this rather than symmetric group so that we can have 0 get
+            # moved around.
             G = PermutationGroup([[(0,1)],[tuple(range(max_idx+1))]])
             A = super(Phylogeny, self).automorphism_group()
         return G.subgroup(
@@ -265,19 +270,20 @@ class Phylogeny(Graph):
     def act_on_right(self, permish):
         """
         Returns a new tree.
-        `permish` is something that can be coerced into being a permutation.
+        `permish` is something that has a .dict() method.
         """
-        p = list(Permutation(permish))
-        n = self.n_leaves()-1
+        p = permish.dict().values()
+        n = self.n_leaves()
         if n != len(p):
             raise ValueError(
                 'Permutation must have same length as # leaves of tree.')
         # relabel has some "quirks":
         # http://www.sagemath.org/doc/reference/graphs/sage/graphs/generic_graph.html#sage.graphs.generic_graph.GenericGraph.relabel
-        return self.relabel(
-            # Fix everything except for leaves.
-            [0]+p+range(n+1, self.order()),
-            inplace=False)
+        # Fix everything except for leaves.
+        if self.rooted:
+            return self.relabel([0]+p+range(n+1, self.order()), inplace=False)
+        else:
+            return self.relabel(p+range(n, self.order()), inplace=False)
 
 
 # Functions
