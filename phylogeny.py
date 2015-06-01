@@ -94,22 +94,43 @@ class Phylogeny(Graph):
                     for t in [l, r]])+\
                 ');'
 
-    def to_newick_shape(self):
+    def _rooted_to_newick_shape(self, standalone=True):
         """
-        Return a Newick string representation of the shape (i.e.
-        non-leaf-labeled but rooted graph) of tree self.
+        Returns a Newick string such that the order of the subtrees is
+        increasing in terms of lexicographical order.
+        `standalone` determines if it's part of a larger tree or not.
         """
-        # TODO: deal with unrooted trees too.
-        raise NotImplementedError
         def sorted_join(a, b):
             if a < b:
                 return ('('+a+','+b+')')
             else:
                 return ('('+b+','+a+')')
-        if self.neighbors(0) == []:
-            return '()'
-        nwk = self.tree_reduce(sorted_join, lambda _: '')
-        return nwk+';'
+        if len(self.neighbors(0)) == 0 or self.order() == 2:
+            # A 1-leaf rooted tree.
+            if standalone:
+                return '();'
+            return ''
+        nwk = self.tree_reduce(sorted_join, lambda _: "")
+        if standalone:
+            return nwk+";"
+        return nwk
+
+    def to_newick_shape(self):
+        """
+        Return a Newick string representation of the shape (i.e. non-leaf-labeled
+        graph rooted at zero) of tree t with larger trees always on the left.
+        """
+        if self.n_leaves() <= 2 or self.rooted:
+            return self._rooted_to_newick_shape()
+        else:
+            [z, l, r] = self.neighbor_trees(self.internal_root())
+            # z is just the zero leaf, which we add back in via the string
+            # below.
+            assert(z.vertices() == [0])
+            strings = sorted(map(
+                            lambda t: t._rooted_to_newick_shape(standalone=False),
+                            [l, r]))
+            return '(,'+','.join(strings)+');'
 
     def duplicate_zero_edge(self):
         """
@@ -163,7 +184,8 @@ class Phylogeny(Graph):
 
     def neighbor_trees(self, v):
         """
-        Return the three trees around an internal node.
+        Return the three trees around an internal node, each of which gets
+        rooted at 0.
         """
         # TODO: further validation.
         g = self.copy()
@@ -319,41 +341,3 @@ def indexed_tree_list(to):
     is a list of trees with i leaves.
     """
     return [[]] + [enumerate_rooted_trees(i) for i in range(1, to)]
-
-
-# TODO: Don't really belong?
-
-def equivalence_classes(criterion, things):
-    """
-    Given a criterion for isomporphism (returning a boolean and a certificate)
-    and a list of things, return an array such that the ith entry is the first
-    appearance of the ith thing's equivalence class under the criterion, as
-    well as the certificates that show the isomorphism.
-    """
-    found = []
-    map_to_class = []
-    certs = []
-    identity = {i: i for i in range(things[0].order())}
-    for test_i in range(len(things)):
-        # Begin search.
-        for found_i in found:
-            (is_same, cert) = criterion(things[found_i], things[test_i])
-            if is_same:
-                map_to_class.append(found_i)  # This maps test_i to found_i.
-                certs.append(cert)
-                break  # We are done searching.
-        else:  # Else statement for the for loop (!).
-            found.append(test_i)
-            map_to_class.append(test_i)  # Isomorphic to self, of course.
-            certs.append(identity)
-    return (map_to_class, certs)
-
-
-def equivalence_class_representatives(criterion, things):
-    (map_to_class, _) = equivalence_classes(criterion, things)
-    return list(things[i] for i in list(set(map_to_class)))
-
-
-def llt_isomorphism_matrix(l):
-    n = len(l)
-    return matrix(n, n, lambda i, j: int(l[i].llt_is_isomorphic(l[j])))
