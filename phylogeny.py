@@ -47,7 +47,7 @@ class Phylogeny(Graph):
         if self.rooted:
             return SymmetricGroup(n)
         else:
-            return PermutationGroup([[(0,1)],[tuple(range(n))]])
+            return unrooted_symmetric_group(n)
 
     def plot(self):
         if self.rooted:
@@ -300,6 +300,10 @@ class Phylogeny(Graph):
 
 
 # Functions
+
+# 0-indexed symmetric group
+def unrooted_symmetric_group(n):
+    return PermutationGroup([[(0,1)],[tuple(range(n))]])
 
 def plot_tree_list(l):
     return GraphicsArray([t.plot() for t in l])
