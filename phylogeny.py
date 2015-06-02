@@ -105,7 +105,6 @@ class Phylogeny(Graph):
             # z is just the zero leaf, which we add back in via the string
             # below.
             assert(z.vertices() == [0])
-            # TODO: sort subtrees.
             return '(0,'+\
                 ','.join([
                     t._rooted_to_newick(standalone=False)
@@ -203,9 +202,8 @@ class Phylogeny(Graph):
     def neighbor_trees(self, v):
         """
         Return the three trees around an internal node, each of which gets
-        rooted at 0.
+        rooted at 0, sorted by their minimal leaf index.
         """
-        # TODO: further validation.
         g = self.copy()
         neighbors = self.neighbors(v)
         if len(neighbors) == 1:
@@ -220,7 +218,15 @@ class Phylogeny(Graph):
             h.correct_deg_two_vertex(w)
             h.rooted = True # TODO: eventually add a rooting method?
             return h
-        return [rooted_subtree_with_root(w) for w in neighbors]
+        l = [rooted_subtree_with_root(w) for w in neighbors]
+        def min_leaf(t):
+            verts = t.vertices()
+            if verts == [0]:
+                return 0
+            else:
+                return verts[1]
+        l.sort(key=min_leaf)
+        return l
 
     def multiedge_leaf_edges(self):
         """
