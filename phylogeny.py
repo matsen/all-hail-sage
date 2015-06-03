@@ -1,7 +1,9 @@
-# Degree-3-internal-node phylogenetic trees in SAGE. When rooted, 0 is always
-# the root, then 1 through n are the leaves and higher values are used for the
-# internal nodes. When unrooted, 1 through n are the leaves. No promises are
-# made concerning the numbering of the internal nodes.
+# Phylogenetic trees in SAGE. When rooted, 0 is always the root, then 1 through
+# n are the leaves and higher values are used for the internal nodes. When
+# unrooted, 1 through n are the leaves. No promises are made concerning the
+# numbering of the internal nodes.
+
+# TODO: rooted is determined only by having a zero leaf?
 
 import copy
 from sage.all import Graph, matrix, Permutation, SymmetricGroup
@@ -62,13 +64,12 @@ class Phylogeny(Graph):
         # Imagine arrow pointing from src to dst.
         # That is where the subtree starts.
         def aux(src, dst):
-            n = self.neighbors(dst)
-            n.remove(src)
-            if n == []:  # Leaf.
+            nbs = self.neighbors(dst)
+            nbs.remove(src)
+            if nbs == []:  # Leaf.
                 return f_leaf(dst)
             else:  # Internal node.
-                [left, right] = n
-                return f_internal(aux(dst, left), aux(dst, right))
+                return f_internal(aux(dst, daughter) for daughter in nbs)
         return aux(0, self.internal_root())
 
     def _rooted_to_newick(self, standalone=True):
@@ -77,13 +78,15 @@ class Phylogeny(Graph):
         increasing in terms of the minimum of the leaf labels.
         `standalone` determines if it's part of a larger tree or not.
         """
+        # We carry along minimum leaf number as the first elt of a tuple to sort.
+        def sorted_join(daughters):
+            assert(daughters is not [])
+            # Sort by this minimum leaf number.
+            sorted_daughters = sorted(daughters, key=lambda d: d[0])
+            return (
+                sorted_daughters[0][0],  # The minimum leaf number.
+                '('+','.join(d[1] for d in sorted_daughters)+')')
         self.check_rooted_zero_edge()
-        # Carry along minimum leaf number to sort.
-        def sorted_join((a, a_str), (b, b_str)):
-            if a < b:
-                return (a, '('+a_str+','+b_str+')')
-            else:
-                return (b, '('+b_str+','+a_str+')')
         if self.order() == 1:
             assert(standalone);  # Can't just have the root as a part of a tree.
             return '();'
@@ -98,22 +101,18 @@ class Phylogeny(Graph):
         return nwk
 
     def to_newick(self):
-        if self.rooted or self.n_leaves() <= 2:
+        """
+        Returns a Newick string such that the order of the subtrees is
+        increasing in terms of the minimum of the leaf labels.
+        """
+        if self.rooted:
             return self._rooted_to_newick()
         else:
-            [z, l, r] = self.neighbor_trees(self.internal_root())
-            # z is just the root leaf, which we add back in via the string
-            # below.
-            if(z.vertices() != [0,1]):
-                print z.vertices()
-                print l.vertices()
-                print r.vertices()
-            assert(z.vertices() == [0,1])
-            return '('+str(self.root_leaf())+','+\
-                ','.join([
-                    t._rooted_to_newick(standalone=False)
-                    for t in [l, r]])+\
-                ');'
+            # Root at the internal root.
+            h = self.copy()
+            h.add_vertex(0)
+            h.add_edge(0, self.internal_root())
+            return h._rooted_to_newick()
 
     def _rooted_to_newick_shape(self, standalone=True):
         """
@@ -121,17 +120,18 @@ class Phylogeny(Graph):
         increasing in terms of lexicographical order.
         `standalone` determines if it's part of a larger tree or not.
         """
-        def sorted_join(a, b):
-            if a < b:
-                return ('('+a+','+b+')')
-            else:
-                return ('('+b+','+a+')')
-        if len(self.neighbors(0)) == 0 or self.order() == 2:
+        def sorted_join(daughters):
+            return '('+','.join(sorted(daughters))+')'
+        self.check_rooted_zero_edge()
+        if self.order() == 1:
+            assert(standalone);  # Can't just have the root as a part of a tree.
+            return ';'
+        if self.order() == 2:
             # A 1-leaf rooted tree.
             if standalone:
                 return '();'
-            return ''
-        nwk = self.rooted_reduce(sorted_join, lambda _: "")
+            return '()'
+        nwk = self.rooted_reduce(sorted_join, lambda x: '')
         if standalone:
             return nwk+";"
         return nwk
@@ -141,18 +141,14 @@ class Phylogeny(Graph):
         Return a Newick string representation of the shape (i.e. non-leaf-labeled
         graph rooted at zero) of tree t with larger trees always on the left.
         """
-        if self.n_leaves() <= 2 or self.rooted:
+        if self.rooted:
             return self._rooted_to_newick_shape()
         else:
-            [z, l, r] = self.neighbor_trees(self.internal_root())
-            # z is just the root leaf.
-            if(z.vertices() != [0,1]):
-                print z.vertices()
-            assert(z.vertices() == [0,1])
-            strings = sorted(map(
-                            lambda t: t._rooted_to_newick_shape(standalone=False),
-                            [l, r]))
-            return '(,'+','.join(strings)+');'
+            # Root at the internal root.
+            h = self.copy()
+            h.add_vertex(0)
+            h.add_edge(0, self.internal_root())
+            return h._rooted_to_newick_shape()
 
     def duplicate_zero_edge(self):
         """
@@ -201,44 +197,6 @@ class Phylogeny(Graph):
         if len(n) > 1:
             raise ValueError('Too many neighbors of root leaf.')
         return n[0]
-
-    def correct_deg_two_vertex(self, v):
-        """
-        If v is a degree two vertex, remove it and heal the edge.
-        """
-        n = self.neighbors(v)
-        if len(n) == 2:
-            self.delete_vertex(v)
-            self.add_edge(n[0], n[1])
-
-    def neighbor_trees(self, v):
-        """
-        Return the three trees around an internal node, each of which gets
-        rooted at 0, sorted by their minimal leaf index.
-        """
-        g = self.copy()
-        neighbors = self.neighbors(v)
-        if len(neighbors) == 1:
-            raise ValueError('`neighbor_trees` expects an internal node.')
-        g.delete_vertex(v)
-        def rooted_subtree_with_root(w):
-            h = g.copy()
-            h.subgraph(
-                vertices=g.connected_component_containing_vertex(w), inplace=True)
-            h.add_vertex(0)
-            h.add_edge(0, w)
-            h.correct_deg_two_vertex(w)
-            h.rooted = True
-            return h
-        l = [rooted_subtree_with_root(w) for w in neighbors]
-        def min_leaf(t):
-            verts = t.vertices()
-            if len(verts) == 1:
-                return verts[0]
-            else:
-                return verts[1]  # Assuming that vertices returns a sorted list.
-        l.sort(key=min_leaf)
-        return l
 
     def multiedge_leaf_edges(self):
         """
@@ -351,7 +309,7 @@ def enumerate_trees(n_leaves, rooted=True):
     if rooted:
         return _enumerate_rooted_trees(n_leaves, n_leaves+1)
     if n_leaves == 1:
-        t = Phylogeny(rooted=False)
+        t = Phylogeny(rooted=rooted)
         return [t.add_vertices([1])]
     # Unrooted trees are in our setup are the same as rooted trees with one
     # less leaf (note the -1 below).
