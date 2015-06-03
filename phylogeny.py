@@ -202,8 +202,8 @@ class Phylogeny(Graph):
         """
         Make a tree such that graph isomorphism is equivalent to leaf-labeled
         (labeled by the leaf vertex numbers) isomorphism.
-        We assume that the tree was made by enumerate_rooted_trees, so that the
-        leaf indices are all smaller than any internal node.
+        We assume that the tree was made by the enumeration code below, so that
+        the leaf indices are all smaller than any internal node.
         """
         m = self.copy()
         m.allow_multiple_edges(True)
@@ -272,7 +272,7 @@ def plot_tree_list(l):
     return GraphicsArray([t.plot() for t in l])
 
 
-def _enumerate_rooted_trees(max_leaf_label, start_internal):
+def _enumerate_rooted_bifurcating_trees(max_leaf_label, start_internal):
     """
     Rooted tree enumeration with internal nodes starting at some value and such
     that the maximum leaf label is `max_leaf_label`.
@@ -286,7 +286,8 @@ def _enumerate_rooted_trees(max_leaf_label, start_internal):
     else:
         l = []
         # For every tree with one fewer taxon...
-        for g in _enumerate_rooted_trees(max_leaf_label-1, start_internal+1):
+        for g in _enumerate_rooted_bifurcating_trees(
+                                max_leaf_label-1, start_internal+1):
             # cut every edge in two and attach the new taxon, which is named
             # max_leaf_label.
             for (u, v, _) in g.edges():
@@ -302,18 +303,18 @@ def _enumerate_rooted_trees(max_leaf_label, start_internal):
         return l
 
 
-def enumerate_trees(n_leaves, rooted=True):
+def enumerate_bifurcating_trees(n_leaves, rooted=True):
     """
     Construct all the bifurcating, leaf-labeled phylogenetic trees.
     """
     if rooted:
-        return _enumerate_rooted_trees(n_leaves, n_leaves+1)
+        return _enumerate_rooted_bifurcating_trees(n_leaves, n_leaves+1)
     if n_leaves == 1:
         t = Phylogeny(rooted=rooted)
         return [t.add_vertices([1])]
     # Unrooted trees are in our setup are the same as rooted trees with one
     # less leaf (note the -1 below).
-    l = _enumerate_rooted_trees(n_leaves-1, n_leaves)
+    l = _enumerate_rooted_bifurcating_trees(n_leaves-1, n_leaves)
     for t in l:
         # Boost labels by 1 so that leaves are 1 through n.
         t.relabel(range(1, t.order()+1))
