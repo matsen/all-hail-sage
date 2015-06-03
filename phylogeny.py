@@ -1,6 +1,6 @@
 # Degree-3-internal-node phylogenetic trees in SAGE. When rooted, 0 is always
 # the root, then 1 through n are the leaves and higher values are used for the
-# internal nodes. When unrooted, 0 through n-1 are the leaves. No promises are
+# internal nodes. When unrooted, 1 through n are the leaves. No promises are
 # made concerning the numbering of the internal nodes.
 
 import copy
@@ -42,13 +42,6 @@ class Phylogeny(Graph):
         else:
             return n
 
-    def leaf_symmetric_group(self):
-        n = self.n_leaves()
-        if self.rooted:
-            return SymmetricGroup(n)
-        else:
-            return unrooted_symmetric_group(n)
-
     def plot(self):
         if self.rooted:
             return super(Phylogeny, self).plot(
@@ -56,11 +49,16 @@ class Phylogeny(Graph):
         else:
             return super(Phylogeny, self).plot()
 
-    def tree_reduce(self, f_internal, f_leaf):
+    def check_rooted_zero_edge(self):
+        if 0 != self.vertices()[0]:
+            raise ValueError('Zero vertex not present in this rooted tree.')
+
+    def rooted_reduce(self, f_internal, f_leaf):
         """
         Assume that t is rooted at 0 and recur down through the rest of the
         tree using the supplied functions.
         """
+        self.check_rooted_zero_edge()
         # Imagine arrow pointing from src to dst.
         # That is where the subtree starts.
         def aux(src, dst):
@@ -79,33 +77,39 @@ class Phylogeny(Graph):
         increasing in terms of the minimum of the leaf labels.
         `standalone` determines if it's part of a larger tree or not.
         """
+        self.check_rooted_zero_edge()
         # Carry along minimum leaf number to sort.
         def sorted_join((a, a_str), (b, b_str)):
             if a < b:
                 return (a, '('+a_str+','+b_str+')')
             else:
                 return (b, '('+b_str+','+a_str+')')
-        if len(self.neighbors(0)) == 0:
+        if self.order() == 1:
+            assert(standalone);  # Can't just have the root as a part of a tree.
             return '();'
         if self.order() == 2:
             # A 1-leaf rooted tree.
             if standalone:
-                return '({});'.format(self.internal_root())
-            return str(self.internal_root())
-        _, nwk = self.tree_reduce(sorted_join, lambda x: (x, str(x)))
+                return '({});'.format(self.vertices()[1])
+            return str(self.vertices()[1])
+        _, nwk = self.rooted_reduce(sorted_join, lambda x: (x, str(x)))
         if standalone:
             return nwk+";"
         return nwk
 
     def to_newick(self):
-        if self.n_leaves() <= 2 or self.rooted:
+        if self.rooted or self.n_leaves() <= 2:
             return self._rooted_to_newick()
         else:
             [z, l, r] = self.neighbor_trees(self.internal_root())
-            # z is just the zero leaf, which we add back in via the string
+            # z is just the root leaf, which we add back in via the string
             # below.
-            assert(z.vertices() == [0])
-            return '(0,'+\
+            if(z.vertices() != [0,1]):
+                print z.vertices()
+                print l.vertices()
+                print r.vertices()
+            assert(z.vertices() == [0,1])
+            return '('+str(self.root_leaf())+','+\
                 ','.join([
                     t._rooted_to_newick(standalone=False)
                     for t in [l, r]])+\
@@ -127,7 +131,7 @@ class Phylogeny(Graph):
             if standalone:
                 return '();'
             return ''
-        nwk = self.tree_reduce(sorted_join, lambda _: "")
+        nwk = self.rooted_reduce(sorted_join, lambda _: "")
         if standalone:
             return nwk+";"
         return nwk
@@ -141,9 +145,10 @@ class Phylogeny(Graph):
             return self._rooted_to_newick_shape()
         else:
             [z, l, r] = self.neighbor_trees(self.internal_root())
-            # z is just the zero leaf, which we add back in via the string
-            # below.
-            assert(z.vertices() == [0])
+            # z is just the root leaf.
+            if(z.vertices() != [0,1]):
+                print z.vertices()
+            assert(z.vertices() == [0,1])
             strings = sorted(map(
                             lambda t: t._rooted_to_newick_shape(standalone=False),
                             [l, r]))
@@ -176,18 +181,25 @@ class Phylogeny(Graph):
         return [(u, v, l) for (u, v, l) in self.edges()
                 if self.degree(u) == 1 or self.degree(v) == 1]
 
+    def root_leaf(self):
+        """
+        This is the root leaf for rooted trees, and an arbitrary choice of 1 for unrooted trees.
+        """
+        if self.rooted:
+            return 0
+        else:
+            return 1
+
     def internal_root(self):
         """
-        Return the node connecting to the zero leaf.
+        Return the node connecting to the zero leaf if rooted, or the one leaf if not.
         """
-        if not self.has_vertex(0):
-            raise ValueError('This graph has no 0 vertex.')
-        n = self.neighbors(0)
+        assert(self.has_vertex(self.root_leaf()))
+        n = self.neighbors(self.root_leaf())
         if n == []:
             raise ValueError('Empty tree has no internal root.')
         if len(n) > 1:
-            print n
-            raise ValueError('0 vertex is not a leaf.')
+            raise ValueError('Too many neighbors of root leaf.')
         return n[0]
 
     def correct_deg_two_vertex(self, v):
@@ -216,15 +228,15 @@ class Phylogeny(Graph):
             h.add_vertex(0)
             h.add_edge(0, w)
             h.correct_deg_two_vertex(w)
-            h.rooted = True # TODO: eventually add a rooting method?
+            h.rooted = True
             return h
         l = [rooted_subtree_with_root(w) for w in neighbors]
         def min_leaf(t):
             verts = t.vertices()
-            if verts == [0]:
-                return 0
+            if len(verts) == 1:
+                return verts[0]
             else:
-                return verts[1]
+                return verts[1]  # Assuming that vertices returns a sorted list.
         l.sort(key=min_leaf)
         return l
 
@@ -260,30 +272,28 @@ class Phylogeny(Graph):
         subgroup of the symmetric group.
         Like everything here, assumes that the first n nodes are leaves.
         """
-        G = self.leaf_symmetric_group()
         # If rooted, discount the root "leaf", and if unrooted this is the
         # correct max index:
+        n = self.n_leaves()
+        G = SymmetricGroup(n)
         if self.rooted:
-            max_idx = self.n_leaves()
             # Only take graph automorphisms that don't move 0.
             A = super(Phylogeny, self).automorphism_group(
                 partition=[[0], range(1, self.order())])
         else:
-            max_idx = self.n_leaves()-1
-            # Use this rather than symmetric group so that we can have 0 get
-            # moved around.
             A = super(Phylogeny, self).automorphism_group()
         return G.subgroup(
             filter(
                 # Just take the movement of the leaves, not the internals.
-                lambda tup: all(i <= max_idx for i in tup),
+                lambda tup: all(i <= n for i in tup),
                 g.cycle_tuples())
             for g in A.gens())
 
     def act_on_right(self, permish):
         """
         Returns a new tree.
-        `permish` is something that has a .dict() method.
+        `permish` is something that has a .dict() method with the same number
+        of values as there are leaves of the tree.
         """
         p = permish.dict().values()
         n = self.n_leaves()
@@ -294,16 +304,11 @@ class Phylogeny(Graph):
         # http://www.sagemath.org/doc/reference/graphs/sage/graphs/generic_graph.html#sage.graphs.generic_graph.GenericGraph.relabel
         # Fix everything except for leaves.
         if self.rooted:
-            return self.relabel([0]+p+range(n+1, self.order()), inplace=False)
-        else:
-            return self.relabel(p+range(n, self.order()), inplace=False)
+            p = [0]+p
+        return self.relabel(p+range(n+1, self.order()), inplace=False)
 
 
 # Functions
-
-# 0-indexed symmetric group
-def unrooted_symmetric_group(n):
-    return PermutationGroup([[(0,1)],[tuple(range(n))]])
 
 def plot_tree_list(l):
     return GraphicsArray([t.plot() for t in l])
@@ -343,19 +348,19 @@ def enumerate_trees(n_leaves, rooted=True):
     """
     Construct all the bifurcating, leaf-labeled phylogenetic trees.
     """
-    if rooted == False:
-        if n_leaves == 1:
-            t = Phylogeny(rooted=False)
-            return [t.add_vertices([0])]
-
-        # Unrooted trees are in our setup are the same as rooted trees with one
-        # less leaf (note the -1 below).
-        l = _enumerate_rooted_trees(n_leaves-1, n_leaves)
-        for t in l:
-            t.rooted = False  # TODO: eventually add a rooting method?
-        return l
-
-    return _enumerate_rooted_trees(n_leaves, n_leaves+1)
+    if rooted:
+        return _enumerate_rooted_trees(n_leaves, n_leaves+1)
+    if n_leaves == 1:
+        t = Phylogeny(rooted=False)
+        return [t.add_vertices([1])]
+    # Unrooted trees are in our setup are the same as rooted trees with one
+    # less leaf (note the -1 below).
+    l = _enumerate_rooted_trees(n_leaves-1, n_leaves)
+    for t in l:
+        # Boost labels by 1 so that leaves are 1 through n.
+        t.relabel(range(1, t.order()+1))
+        t.rooted = False
+    return l
 
 
 def indexed_tree_list(to):
