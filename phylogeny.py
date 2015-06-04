@@ -61,15 +61,17 @@ class Phylogeny(Graph):
         tree using the supplied functions.
         """
         self.check_rooted_zero_edge()
-        # Imagine arrow pointing from src to dst.
-        # That is where the subtree starts.
+        # Imagine an arrow pointing from src to dst. That is where the subtree
+        # starts, with dst being the "root" node of the subtree.
         def aux(src, dst):
             nbs = self.neighbors(dst)
             nbs.remove(src)
             if nbs == []:  # Leaf.
                 return f_leaf(dst)
             else:  # Internal node.
-                return f_internal(aux(dst, daughter) for daughter in nbs)
+                return f_internal(
+                        dst,
+                        [aux(dst, daughter) for daughter in nbs])
         return aux(0, self.internal_root())
 
     def _rooted_to_newick(self, standalone=True):
@@ -79,7 +81,7 @@ class Phylogeny(Graph):
         `standalone` determines if it's part of a larger tree or not.
         """
         # We carry along minimum leaf number as the first elt of a tuple to sort.
-        def sorted_join(daughters):
+        def sorted_join(_, daughters):
             assert(daughters is not [])
             # Sort by this minimum leaf number.
             sorted_daughters = sorted(daughters, key=lambda d: d[0])
@@ -120,7 +122,7 @@ class Phylogeny(Graph):
         increasing in terms of lexicographical order.
         `standalone` determines if it's part of a larger tree or not.
         """
-        def sorted_join(daughters):
+        def sorted_join(_, daughters):
             return '('+','.join(sorted(daughters))+')'
         self.check_rooted_zero_edge()
         if self.order() == 1:
@@ -264,6 +266,34 @@ class Phylogeny(Graph):
         if self.rooted:
             p = [0]+p
         return self.relabel(p+range(n+1, self.order()), inplace=False)
+
+    def centroids(self):
+        """
+        Returns centroids for trees with a zero leaf, ignoring that zero leaf.
+        """
+        # Tacky scoping workaround https://www.python.org/dev/peps/pep-3104/
+        class Namespace:
+            pass
+        ns = Namespace()
+
+        assert(self.has_vertex(0))
+        n = len(self.leaf_edges()) - 1  # Always discount zero leaf.
+        ns.best_score = n
+        ns.candidates = [0]
+        print n
+        def aux_internal(curr, below_weights):
+            tot = sum(below_weights)
+            score = max([n - tot] + below_weights)
+            if score < ns.best_score:
+                ns.best_score = score
+                ns.candidates = [curr]
+            elif score == ns.best_score:
+                ns.candidates.append(curr)
+            return tot
+        self.rooted_reduce(aux_internal, lambda _: 1)
+        if n != 0:
+            assert(ns.candidates != [0])  # Should find _something_ better!
+        return ns.candidates
 
 
 # Functions
