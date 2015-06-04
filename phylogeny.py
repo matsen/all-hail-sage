@@ -280,7 +280,6 @@ class Phylogeny(Graph):
         n = len(self.leaf_edges()) - 1  # Always discount zero leaf.
         ns.best_score = n
         ns.candidates = [0]
-        print n
         def aux_internal(curr, below_weights):
             tot = sum(below_weights)
             score = max([n - tot] + below_weights)
