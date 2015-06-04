@@ -52,8 +52,21 @@ class Phylogeny(Graph):
             return super(Phylogeny, self).plot()
 
     def check_rooted_zero_edge(self):
-        if 0 != self.vertices()[0]:
+        if not self.has_vertex(0):
             raise ValueError('Zero vertex not present in this rooted tree.')
+        if self.order() > 1 and self.edges_incident(0) == []:
+            raise ValueError('Lonely zero vertex!')
+
+    def rooted_at(self, v):
+        """
+        Makes a new version of self rooted at v.
+        """
+        h = self.copy()
+        if h.has_vertex(0):
+            h.delete_vertex(0)
+        h.add_edge(0, v)
+        h.rooted = True
+        return h
 
     def rooted_reduce(self, f_internal, f_leaf):
         """
@@ -80,6 +93,7 @@ class Phylogeny(Graph):
         increasing in terms of the minimum of the leaf labels.
         `standalone` determines if it's part of a larger tree or not.
         """
+        assert(self.rooted)
         # We carry along minimum leaf number as the first elt of a tuple to sort.
         def sorted_join(_, daughters):
             assert(daughters is not [])
@@ -111,10 +125,7 @@ class Phylogeny(Graph):
             return self._rooted_to_newick()
         else:
             # Root at the internal root.
-            h = self.copy()
-            h.add_vertex(0)
-            h.add_edge(0, self.internal_root())
-            return h._rooted_to_newick()
+            return self.rooted_at(self.internal_root())._rooted_to_newick()
 
     def _rooted_to_newick_shape(self, standalone=True):
         """
@@ -122,6 +133,7 @@ class Phylogeny(Graph):
         increasing in terms of lexicographical order.
         `standalone` determines if it's part of a larger tree or not.
         """
+        assert(self.rooted)
         def sorted_join(_, daughters):
             return '('+','.join(sorted(daughters))+')'
         self.check_rooted_zero_edge()
@@ -142,15 +154,22 @@ class Phylogeny(Graph):
         """
         Return a Newick string representation of the shape (i.e. non-leaf-labeled
         graph rooted at zero) of tree t with larger trees always on the left.
+        For unrooted trees, we root the tree at the centroid if it is unique.
+        If not, then we take the centroid with the maximum-lexicographic shape
+        string as defined by Python.
         """
         if self.rooted:
             return self._rooted_to_newick_shape()
         else:
-            # Root at the internal root.
-            h = self.copy()
-            h.add_vertex(0)
-            h.add_edge(0, self.internal_root())
-            return h._rooted_to_newick_shape()
+            s = ""
+            h = self.rooted_at(self.internal_root())
+            for c in h.centroids():
+                h.delete_edges(h.edges_incident(0))
+                h.add_edge(0, c)
+                new_s = h._rooted_to_newick_shape()
+                if new_s > s:
+                    s = new_s
+            return s
 
     def duplicate_zero_edge(self):
         """
