@@ -171,23 +171,30 @@ class Phylogeny(Graph):
                     s = new_s
             return s
 
-    def duplicate_zero_edge(self):
+    def make_special(self):
         """
-        Return a new tree that is the same as the original except with the edge
-        to zero doubled up.
+        Make a graph out of the tree that is different than the original tree,
+        and different from the result of make_special on any other distinct
+        tree.
         """
         m = self.copy()
         m.allow_multiple_edges(True)
-        [internal_root] = self.neighbors(0)
-        m.add_edge(0, internal_root)
+        if self.rooted:
+            # Double up the edge to zero.
+            m.add_edge(m.root_leaf(), m.internal_root())
+        else:
+            # Double up every leaf edge (no distinguished edges, so have to do
+            # them all).
+            for (u, v, _) in self.leaf_edges():
+                m.add_edge(u, v)
         return m
 
     def rooted_is_isomorphic(self, other):
         """
         Are the two trees isomorphic if we give special status to the root?
         """
-        return self.duplicate_zero_edge().is_isomorphic(
-            other.duplicate_zero_edge(),
+        return self.make_special().is_isomorphic(
+            other.make_special(),
             certify=True)
 
     def leaf_edges(self):
